@@ -1,13 +1,14 @@
 """Judge one requirement against the retrieved policy passages."""
 import json
+import os
 import re
-import time
 
 from google.genai import types
 
 from rag import MIN_SCORE, get_client
 
-LLM_MODEL = "gemini-3.8-flash"
+# Flash models allow only 20 requests/day on the free tier (1 per requirement); flash-lite allows far more.
+LLM_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.1-flash-lite")
 STATUSES = ["Addressed", "Partially addressed", "Not addressed"]
 
 PROMPT = """You are a compliance analyst. Decide whether the policy excerpts below address the requirement.
@@ -18,27 +19,25 @@ Requirement: {requirement}
 Policy excerpts:
 {excerpts}
 
-Return JSON with these keys:
-- "status": "Addressed" (fully covered), "Partially addressed" (mentioned but incomplete or vague), or "Not addressed" (the excerpts do not cover it)
+Return JSON with these keys, in this order:
+- "reasoning": one sentence on what the excerpts say about this topic, if anything
+- "status": one of
+    "Addressed" - the excerpts clearly and specifically cover the requirement
+    "Partially addressed" - the topic is mentioned or implied, but details are missing or vague
+    "Not addressed" - nothing in the excerpts relates to the requirement's topic
 - "evidence": the most relevant sentence copied word for word from the excerpts; "" if Not addressed
 - "recommendation": one short, concrete suggestion to improve the policy for this requirement
 - "confidence": "high", "medium" or "low"
 """
 
 
-def ask_gemini(prompt, retries=3):
-    for attempt in range(retries):
-        try:
-            res = get_client().models.generate_content(
-                model=LLM_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0),
-            )
-            return json.loads(res.text)
-        except Exception:
-            if attempt == retries - 1:
-                raise
-            time.sleep(10)  # free tier rate limits
+def ask_gemini(prompt):
+    res = get_client().models.generate_content(
+        model=LLM_MODEL,
+        contents=prompt,
+        config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0),
+    )
+    return json.loads(res.text)
 
 
 def normalize(s):
@@ -51,8 +50,7 @@ def quote_found(evidence, hits):
     return bool(q) and any(q in normalize(chunk) for chunk, _ in hits)
 
 
-def check_requirement(index, requirement):
-    hits = index.search(requirement)
+def check_requirement(requirement, hits):
     best = hits[0][1]
     row = {"Requirement": requirement, "Status": "", "Evidence": "", "Recommendation": "",
            "Human review": "", "Retrieval score": round(best, 2)}

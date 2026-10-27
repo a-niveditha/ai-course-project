@@ -11,13 +11,20 @@ from pypdf import PdfReader
 from analyze import check_requirement
 from rag import PolicyIndex
 
+# (status text colour, translucent row tint) - readable on both light and dark themes
 STATUS_COLORS = {
-    "Addressed": "#e6f4ea",
-    "Partially addressed": "#fef7e0",
-    "Not addressed": "#fce8e6",
-    "No evidence found": "#eeeeee",
-    "Needs review": "#eeeeee",
+    "Addressed": ("#2e9e5b", "rgba(46, 158, 91, 0.10)"),
+    "Partially addressed": ("#c98a12", "rgba(201, 138, 18, 0.10)"),
+    "Not addressed": ("#d64545", "rgba(214, 69, 69, 0.10)"),
+    "No evidence found": ("#8a8f98", "rgba(138, 143, 152, 0.14)"),
+    "Needs review": ("#8a8f98", "rgba(138, 143, 152, 0.14)"),
 }
+
+
+def style_row(row):
+    text, tint = STATUS_COLORS.get(row["Status"], ("", ""))
+    return [f"background-color: {tint}; color: {text}; font-weight: 600" if col == "Status"
+            else f"background-color: {tint}" for col in row.index]
 
 DEFAULT_CHECKLIST = """Does the policy define who can access sensitive data?
 Does it specify how long personal data can be retained?
@@ -58,15 +65,19 @@ if st.button("Generate report", type="primary"):
         try:
             with st.spinner("Indexing policy..."):
                 index = PolicyIndex(policy)
+                all_hits = index.search(requirements)
             progress = st.progress(0.0, text="Checking requirements...")
             rows = []
-            for i, req in enumerate(requirements):
-                rows.append(check_requirement(index, req))
+            for i, (req, hits) in enumerate(zip(requirements, all_hits)):
+                rows.append(check_requirement(req, hits))
                 progress.progress((i + 1) / len(requirements), text=f"Checked {i + 1}/{len(requirements)}")
             progress.empty()
             st.session_state.report = pd.DataFrame(rows)
         except Exception as e:
-            st.error(f"Analysis failed: {e}")
+            if "RESOURCE_EXHAUSTED" in str(e):
+                st.error("Gemini free-tier rate limit reached. Wait a minute and try again.")
+            else:
+                st.error(f"Analysis failed: {e}")
 
 if "report" in st.session_state:
     df = st.session_state.report
@@ -77,9 +88,7 @@ if "report" in st.session_state:
     for col, status in zip(st.columns(len(STATUS_COLORS)), STATUS_COLORS):
         col.metric(status, int(counts.get(status, 0)))
 
-    styled = df.style.hide(axis="index").apply(
-        lambda row: [f"background-color: {STATUS_COLORS.get(row['Status'], '')}"] * len(row), axis=1
-    ).format({"Retrieval score": "{:.2f}"})
+    styled = df.style.hide(axis="index").apply(style_row, axis=1).format({"Retrieval score": "{:.2f}"})
     st.table(styled)
 
     st.download_button("Download CSV", df.to_csv(index=False), "compliance_report.csv", "text/csv")
