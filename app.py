@@ -6,10 +6,9 @@ load_dotenv()
 
 import pandas as pd
 import streamlit as st
-from pypdf import PdfReader
-
-from analyze import check_requirement
-from rag import PolicyIndex
+from compliance.analyzer import check_requirement
+from compliance.index import PolicyIndex
+from compliance.loader import read_pdf, read_text
 
 # (status text colour, translucent row tint) - readable on both light and dark themes
 STATUS_COLORS = {
@@ -34,8 +33,8 @@ Does it explain how data is deleted when no longer needed?"""
 
 def read_policy(file):
     if file.name.lower().endswith(".pdf"):
-        return "\n".join(page.extract_text() or "" for page in PdfReader(file).pages)
-    return file.read().decode("utf-8", errors="ignore")
+        return read_pdf(file.getvalue())
+    return read_text(file.getvalue().decode("utf-8", errors="ignore"))
 
 
 st.set_page_config(page_title="Policy Compliance Checker", layout="wide")
@@ -52,12 +51,12 @@ with right:
     checklist = st.text_area("One requirement per line", value=DEFAULT_CHECKLIST, height=290)
 
 if st.button("Generate report", type="primary"):
-    policy = read_policy(file) if file else pasted
+    policy = read_policy(file) if file else read_text(pasted)
     requirements = [line.strip("-• ").strip() for line in checklist.splitlines() if line.strip()]
 
     if not os.getenv("GEMINI_API_KEY"):
         st.error("GEMINI_API_KEY is not set. Add it to a .env file.")
-    elif not policy.strip():
+    elif not policy:
         st.error("Provide a policy document (upload or paste). If it's a scanned PDF, no text could be extracted.")
     elif not requirements:
         st.error("Add at least one requirement.")

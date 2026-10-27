@@ -1,6 +1,6 @@
 streamlit
 google-genai
-pypdf
+pymupdf
 numpy
 pandas
 python-dotenv
