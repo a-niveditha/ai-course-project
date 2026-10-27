@@ -47,6 +47,7 @@ def embed(texts, task_type):
 
 class PolicyIndex:
     def __init__(self, text):
+        self.text = " ".join(text.split())
         self.chunks = chunk_text(text)
         self.vectors = embed(self.chunks, "RETRIEVAL_DOCUMENT")
 
@@ -58,3 +59,12 @@ class PolicyIndex:
             top = np.argsort(scores)[::-1][:k]
             results.append([(self.chunks[i], float(scores[i])) for i in top])
         return results
+
+    def keyword_search(self, term, limit=5, window=200):
+        """Exact, case-insensitive match - runs locally, no API call. Returns surrounding snippets."""
+        snippets, low = [], self.text.lower()
+        start = low.find(term.lower())
+        while start != -1 and len(snippets) < limit:
+            snippets.append(self.text[max(0, start - window):start + len(term) + window])
+            start = low.find(term.lower(), start + len(term) + window)
+        return snippets

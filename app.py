@@ -69,7 +69,7 @@ if st.button("Generate report", type="primary"):
             progress = st.progress(0.0, text="Checking requirements...")
             rows = []
             for i, (req, hits) in enumerate(zip(requirements, all_hits)):
-                rows.append(check_requirement(req, hits))
+                rows.append(check_requirement(req, hits, index))
                 progress.progress((i + 1) / len(requirements), text=f"Checked {i + 1}/{len(requirements)}")
             progress.empty()
             st.session_state.report = pd.DataFrame(rows)
